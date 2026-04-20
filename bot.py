@@ -5,20 +5,43 @@ from flask import Flask, request, jsonify
 from PIL import Image
 import qrcode
 import requests
+import re
 
 app = Flask(__name__)
 TOKEN = "8339983157:AAEYESCLnRTL6sdwI03-bupB1ID-L7bTh6g"
 
 def decode_barcode_api(image_bytes):
-    """Распознаёт штрихкод через API qrserver.com"""
+    """Пробует несколько API для распознавания штрихкодов"""
+    
+    # API 1: qrserver.com
     try:
         files = {'image': ('barcode.jpg', image_bytes, 'image/jpeg')}
         response = requests.post('https://api.qrserver.com/v1/read-qr-code/', files=files, timeout=10)
-        data = response.json()
-        if data and data[0].get('symbol')[0].get('data'):
-            return data[0]['symbol'][0]['data']
+        print(f"QRServer response status: {response.status_code}")
+        print(f"QRServer response text: {response.text[:200]}")
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data and len(data) > 0 and data[0].get('symbol'):
+                for symbol in data[0]['symbol']:
+                    if symbol.get('data'):
+                        return symbol['data']
     except Exception as e:
-        print(f"API error: {e}")
+        print(f"QRServer error: {e}")
+    
+    # API 2: zxing.org (запасной)
+    try:
+        files = {'f': ('barcode.jpg', image_bytes, 'image/jpeg')}
+        response = requests.post('https://zxing.org/w/decode', files=files, timeout=10)
+        print(f"ZXing response status: {response.status_code}")
+        
+        if response.status_code == 200:
+            match = re.search(r'<pre>(.*?)</pre>', response.text)
+            if match:
+                return match.group(1).strip()
+    except Exception as e:
+        print(f"ZXing error: {e}")
+    
     return None
 
 @app.route(f"/{TOKEN}", methods=["POST"])
@@ -43,10 +66,12 @@ def webhook():
             send_message(chat_id, "❌ Не удалось получить фото")
             return jsonify({"ok": True})
         
+        send_message(chat_id, "🔄 Распознаю штрихкод...")
+        
         barcode_data = decode_barcode_api(photo_bytes)
         
         if not barcode_data:
-            send_message(chat_id, "❌ Не удалось распознать штрихкод")
+            send_message(chat_id, "❌ Не удалось распознать штрихкод\n\nПопробуй:\n• Более чёткое фото\n• Другой угол\n• Хорошее освещение")
             return jsonify({"ok": True})
         
         send_message(chat_id, f"📦 Распознано: `{barcode_data}`", parse_mode="Markdown")
@@ -57,7 +82,7 @@ def webhook():
         qr.save(qr_bytes, format="PNG")
         qr_bytes.seek(0)
         
-        # Генерируем штрихкод через API
+        # Генерируем штрихкод
         barcode_url = f"https://barcode.tec-it.com/barcode.ashx?data={barcode_data}&code=Code128&dpi=96"
         barcode_bytes = requests.get(barcode_url).content
         
