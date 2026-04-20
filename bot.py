@@ -2,6 +2,7 @@ import os
 import io
 import json
 from flask import Flask, request, jsonify
+from PIL import Image
 import qrcode
 import requests
 
@@ -9,17 +10,15 @@ app = Flask(__name__)
 TOKEN = "8339983157:AAEYESCLnRTL6sdwI03-bupB1ID-L7bTh6g"
 
 def decode_barcode_api(image_bytes):
-    """Отправляет фото на бесплатный API для распознавания штрихкодов"""
+    """Распознаёт штрихкод через API qrserver.com"""
     try:
-        files = {'f': ('barcode.jpg', image_bytes, 'image/jpeg')}
-        response = requests.post('https://zxing.org/w/decode', files=files)
-        if response.status_code == 200:
-            import re
-            match = re.search(r'<pre>(.*?)</pre>', response.text)
-            if match:
-                return match.group(1).strip()
-    except:
-        pass
+        files = {'image': ('barcode.jpg', image_bytes, 'image/jpeg')}
+        response = requests.post('https://api.qrserver.com/v1/read-qr-code/', files=files, timeout=10)
+        data = response.json()
+        if data and data[0].get('symbol')[0].get('data'):
+            return data[0]['symbol'][0]['data']
+    except Exception as e:
+        print(f"API error: {e}")
     return None
 
 @app.route(f"/{TOKEN}", methods=["POST"])
@@ -52,11 +51,13 @@ def webhook():
         
         send_message(chat_id, f"📦 Распознано: `{barcode_data}`", parse_mode="Markdown")
         
+        # Генерируем QR-код
         qr = qrcode.make(barcode_data)
         qr_bytes = io.BytesIO()
         qr.save(qr_bytes, format="PNG")
         qr_bytes.seek(0)
         
+        # Генерируем штрихкод через API
         barcode_url = f"https://barcode.tec-it.com/barcode.ashx?data={barcode_data}&code=Code128&dpi=96"
         barcode_bytes = requests.get(barcode_url).content
         
@@ -91,6 +92,7 @@ def send_message(chat_id, text, parse_mode=None):
 
 def send_media_group(chat_id, media_list):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMediaGroup"
+    
     files = {}
     media = []
     
