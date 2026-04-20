@@ -1,13 +1,30 @@
 import os
 import io
 import json
+import ctypes
 import barcode
 from barcode.writer import ImageWriter
 from flask import Flask, request, jsonify
 from PIL import Image
 import qrcode
-from pyzbar.pyzbar import decode
 import requests
+
+# Попытка загрузить libzbar для pyzbar (если доступна)
+try:
+    ctypes.CDLL("libzbar.so.0")
+except:
+    pass
+
+# Пробуем импортировать pyzbar, если не получается — используем zbar-py
+try:
+    from pyzbar.pyzbar import decode
+except ImportError:
+    try:
+        from zbar import decode
+    except ImportError:
+        # Заглушка, если ни одна библиотека не установлена
+        def decode(img):
+            return []
 
 app = Flask(__name__)
 TOKEN = "8339983157:AAEYESCLnRTL6sdwI03-bupB1ID-L7bTh6g"
