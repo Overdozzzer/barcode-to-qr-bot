@@ -1,6 +1,11 @@
-Flask==2.3.3
-Pillow==10.1.0
-qrcode==7.4.2
-requests==2.31.0
-python-barcode==0.14.0
-pyzbar==0.1.9
+services:
+  - type: web
+    name: barcode-to-qr-bot
+    runtime: python
+    repo: https://github.com/ТВОЙ_ЛОГИН/barcode-to-qr-bot
+    plan: free
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.13
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn bot:app
