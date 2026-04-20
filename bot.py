@@ -6,11 +6,9 @@ from flask import Flask, request, jsonify
 from PIL import Image
 import qrcode
 import requests
-from pyzbar.pyzbar import decode
 
-# Настройка логов
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Импортируем zbar-py вместо pyzbar
+from zbar import ImageZbar
 
 app = Flask(__name__)
 TOKEN = "8339983157:AAEYESCLnRTL6sdwI03-bupB1ID-L7bTh6g"
@@ -18,7 +16,6 @@ TOKEN = "8339983157:AAEYESCLnRTL6sdwI03-bupB1ID-L7bTh6g"
 @app.route(f"/{TOKEN}", methods=["POST"])
 def webhook():
     data = request.get_json()
-    logger.info(f"Received webhook: {data.keys() if data else 'None'}")
     
     if not data or "message" not in data:
         return jsonify({"ok": True})
@@ -38,12 +35,17 @@ def webhook():
             send_message(chat_id, "❌ Не удалось получить фото")
             return jsonify({"ok": True})
         
-        logger.info(f"Photo size: {len(photo_bytes)} bytes")
-        
+        # Конвертируем в формат для zbar
         img = Image.open(io.BytesIO(photo_bytes))
-        decoded_objects = decode(img)
         
-        logger.info(f"Decoded objects: {len(decoded_objects)}")
+        # Сохраняем как PNG для zbar
+        png_bytes = io.BytesIO()
+        img.save(png_bytes, format="PNG")
+        png_bytes.seek(0)
+        
+        # Распознаём с помощью zbar-py
+        zbar = ImageZbar()
+        decoded_objects = zbar.scan(png_bytes)
         
         if not decoded_objects:
             send_message(chat_id, "❌ Не удалось распознать штрихкод\n\nПопробуй:\n• Чёткое фото\n• Хорошее освещение\n• Штрихкод по центру")
@@ -71,7 +73,6 @@ def webhook():
         )
         
     except Exception as e:
-        logger.error(f"Error: {str(e)}")
         send_message(chat_id, f"❌ Ошибка: {str(e)[:100]}")
     
     return jsonify({"ok": True})
