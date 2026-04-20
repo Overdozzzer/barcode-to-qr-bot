@@ -1,17 +1,26 @@
 import os
 import io
 import json
-import logging
 from flask import Flask, request, jsonify
-from PIL import Image
 import qrcode
 import requests
 
-# Импортируем zbar-py вместо pyzbar
-from zbar import ImageZbar
-
 app = Flask(__name__)
 TOKEN = "8339983157:AAEYESCLnRTL6sdwI03-bupB1ID-L7bTh6g"
+
+def decode_barcode_api(image_bytes):
+    """Отправляет фото на бесплатный API для распознавания штрихкодов"""
+    try:
+        files = {'f': ('barcode.jpg', image_bytes, 'image/jpeg')}
+        response = requests.post('https://zxing.org/w/decode', files=files)
+        if response.status_code == 200:
+            import re
+            match = re.search(r'<pre>(.*?)</pre>', response.text)
+            if match:
+                return match.group(1).strip()
+    except:
+        pass
+    return None
 
 @app.route(f"/{TOKEN}", methods=["POST"])
 def webhook():
@@ -35,26 +44,13 @@ def webhook():
             send_message(chat_id, "❌ Не удалось получить фото")
             return jsonify({"ok": True})
         
-        # Конвертируем в формат для zbar
-        img = Image.open(io.BytesIO(photo_bytes))
+        barcode_data = decode_barcode_api(photo_bytes)
         
-        # Сохраняем как PNG для zbar
-        png_bytes = io.BytesIO()
-        img.save(png_bytes, format="PNG")
-        png_bytes.seek(0)
-        
-        # Распознаём с помощью zbar-py
-        zbar = ImageZbar()
-        decoded_objects = zbar.scan(png_bytes)
-        
-        if not decoded_objects:
-            send_message(chat_id, "❌ Не удалось распознать штрихкод\n\nПопробуй:\n• Чёткое фото\n• Хорошее освещение\n• Штрихкод по центру")
+        if not barcode_data:
+            send_message(chat_id, "❌ Не удалось распознать штрихкод")
             return jsonify({"ok": True})
         
-        barcode_data = decoded_objects[0].data.decode("utf-8")
-        barcode_type = decoded_objects[0].type
-        
-        send_message(chat_id, f"📦 Распознано: `{barcode_data}`\n📌 Тип: `{barcode_type}`", parse_mode="Markdown")
+        send_message(chat_id, f"📦 Распознано: `{barcode_data}`", parse_mode="Markdown")
         
         qr = qrcode.make(barcode_data)
         qr_bytes = io.BytesIO()
@@ -95,7 +91,6 @@ def send_message(chat_id, text, parse_mode=None):
 
 def send_media_group(chat_id, media_list):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMediaGroup"
-    
     files = {}
     media = []
     
